@@ -8,31 +8,6 @@
   </p>
 </div>
 
-<style>
-.badge {
-  display: inline-block;
-  padding: 3px 9px;
-  margin: 2px;
-  border-radius: 999px;
-  border: 1px solid #d8d8d8;
-  background: #f3f3f3;
-  font-size: 12px;
-}
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 12px;
-}
-.card {
-  border: 1px solid #e1e1e1;
-  border-radius: 10px;
-  padding: 10px 12px;
-  background: #ffffff;
-}
-</style>
-
----
-
 ## What It Does
 ProfileDoktor scans local Windows profiles and correlates registry state, event logs, roaming paths, disk health, and file inventory. The output is a technical HTML report with collapsible sections and a left-side navigation tree for fast triage.
 
@@ -109,6 +84,3 @@ Register-ScheduledTask -TaskName 'ProfileDoktor_Audit' -Action $action -Trigger 
 - Security log access is required to surface logon server and 4624 data.
 - The ActiveDirectory module is optional; if available, ProfilePath/HomeDirectory are added.
 - Long path checks are based on classic Windows MAX_PATH behavior (>= 260 chars).
-
-## License
-MIT
