@@ -1,0 +1,15 @@
+# OS
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# PowerShell and tooling
+*.log
+*.clixml
+*.tmp
+*.bak
+*.swp
+
+# Generated reports
+ProfileDoktor_Report_*.html
