@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -9,12 +9,77 @@
 <body>
   <div class="layout">
     <aside class="sidebar">
-      <div class="brand">{{REPORT_TITLE}}</div>
+      <div class="brand"><a class="brand-link" href="{{REPO_URL}}" target="_blank" rel="noopener">{{REPORT_TITLE}}</a></div>
       <div class="meta">Generated {{GENERATED_AT}}</div>
-      {{NAV}}
+      <nav class="nav">
+        <div class="nav-group">
+          <div class="nav-title">Overview</div>
+          <ul class="nav-list">
+            <li><a href="#run-summary">Run Summary</a></li>
+            <li><a href="#scan-config">Scan Configuration</a></li>
+            <li><a href="#system-disk">System Disk</a></li>
+            <li><a href="#profilelist-bak">ProfileList .bak Keys</a></li>
+            <li><a href="#orphaned-profiles">Orphaned Profile Dirs</a></li>
+            <li><a href="#profiles">Profiles</a></li>
+          </ul>
+        </div>
+        <div class="nav-group">
+          <div class="nav-title">Profiles</div>
+          <ul class="nav-list">
+            {{NAV_PROFILE_ITEMS}}
+          </ul>
+        </div>
+      </nav>
     </aside>
     <main class="content">
-      {{CONTENT}}
+      <section id="run-summary" class="section">
+        <details class="detail" open>
+          <summary>Run Summary</summary>
+          <div class="detail-body">
+            {{RUN_SUMMARY_TABLE}}
+          </div>
+        </details>
+      </section>
+
+      <section id="scan-config" class="section">
+        <details class="detail" open>
+          <summary>Scan Configuration</summary>
+          <div class="detail-body">
+            {{SCAN_CONFIG_TABLE}}
+          </div>
+        </details>
+      </section>
+
+      <section id="system-disk" class="section">
+        <details class="detail">
+          <summary>System Disk</summary>
+          <div class="detail-body">
+            {{SYSTEM_DISK_TABLE}}
+          </div>
+        </details>
+      </section>
+
+      <section id="profilelist-bak" class="section">
+        <details class="detail">
+          <summary>ProfileList Registry .bak Keys</summary>
+          <div class="detail-body">
+            {{PROFILELIST_BAK_TABLE}}
+          </div>
+        </details>
+      </section>
+
+      <section id="orphaned-profiles" class="section">
+        <details class="detail">
+          <summary>Orphaned Profile Directories</summary>
+          <div class="detail-body">
+            {{ORPHANED_PROFILES_TABLE}}
+          </div>
+        </details>
+      </section>
+
+      <section id="profiles" class="section">
+        {{PROFILE_SECTIONS}}
+      </section>
     </main>
   </div>
 </body>

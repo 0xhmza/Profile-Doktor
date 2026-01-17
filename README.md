@@ -31,7 +31,7 @@
 }
 </style>
 
-<hr>
+---
 
 ## What It Does
 ProfileDoktor scans local Windows profiles and correlates registry state, event logs, roaming paths, disk health, and file inventory. The output is a technical HTML report with collapsible sections and a left-side navigation tree for fast triage.
@@ -65,17 +65,16 @@ ProfileDoktor scans local Windows profiles and correlates registry state, event 
 - If the report is written to another folder, the CSS is copied next to the HTML for offline viewing.
 
 ## Parameters
-<table>
-  <tr><th>Parameter</th><th>Purpose</th><th>Default</th></tr>
-  <tr><td><code>-UserName</code></td><td>Scan one user (DOMAIN\\user or user@domain).</td><td>None</td></tr>
-  <tr><td><code>-AllUsers</code></td><td>Scan all local profiles.</td><td>True</td></tr>
-  <tr><td><code>-OutputPath</code></td><td>HTML output path.</td><td>Auto in current folder</td></tr>
-  <tr><td><code>-DaysBack</code></td><td>Event lookback window.</td><td>30</td></tr>
-  <tr><td><code>-LargeFileMB</code></td><td>Large-file threshold.</td><td>50</td></tr>
-  <tr><td><code>-TopFileCount</code></td><td>Top N large/locked/long paths.</td><td>25</td></tr>
-  <tr><td><code>-MaxEvents</code></td><td>Per-log event cap.</td><td>2000</td></tr>
-  <tr><td><code>-NoPrompt</code></td><td>Do not ask to open the report.</td><td>False</td></tr>
-</table>
+| Parameter | Purpose | Default |
+| --- | --- | --- |
+| `-UserName` | Scan one user (DOMAIN\user or user@domain). | None |
+| `-AllUsers` | Scan all local profiles. | True |
+| `-OutputPath` | HTML output path. | Auto in current folder |
+| `-DaysBack` | Event lookback window. | 30 |
+| `-LargeFileMB` | Large-file threshold. | 50 |
+| `-TopFileCount` | Top N large/locked/long paths. | 25 |
+| `-MaxEvents` | Per-log event cap. | 2000 |
+| `-NoPrompt` | Do not ask to open the report. | False |
 
 ## Data Sources
 - WMI/CIM: `Win32_UserProfile`, `Win32_LogicalDisk`, `Win32_OperatingSystem`, `Win32_ComputerSystem`
@@ -89,16 +88,15 @@ ProfileDoktor scans local Windows profiles and correlates registry state, event 
   <summary><b>Event IDs scanned</b></summary>
   1500, 1501, 1502, 1504, 1505, 1508, 1509, 1511, 1515, 1517, 1521, 1525,
   1530, 1533, 1542, 1546, 1550, 1552, 1554, 1561, 1564, 1565, 1570, 1571,
-  1581, 1583
+  1581, 1583, 1600
 </details>
 
 ## File Layout
-<table>
-  <tr><th>File</th><th>Purpose</th></tr>
-  <tr><td><code>ProfileDoktor.ps1</code></td><td>Scanner and HTML generator.</td></tr>
-  <tr><td><code>ProfileDoktor.Report.template.html</code></td><td>HTML shell with placeholders.</td></tr>
-  <tr><td><code>ProfileDoktor.Report.css</code></td><td>Offline CSS for the report.</td></tr>
-</table>
+| File | Purpose |
+| --- | --- |
+| `ProfileDoktor.ps1` | Scanner and HTML generator. |
+| `ProfileDoktor.Report.template.html` | HTML shell with placeholders. |
+| `ProfileDoktor.Report.css` | Offline CSS for the report. |
 
 ## Automation (Task Scheduler)
 ```powershell

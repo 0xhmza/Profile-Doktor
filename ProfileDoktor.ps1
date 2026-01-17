@@ -119,11 +119,36 @@ function New-DetailsBlock {
     param(
         [string]$Title,
         [string]$BodyHtml,
+        [string]$Id,
         [switch]$Open
     )
     $openAttr = if ($Open) { ' open' } else { '' }
-    return "<details class='detail'$openAttr><summary>$(ConvertTo-HtmlSafe $Title)</summary><div class='detail-body'>$BodyHtml</div></details>"
+    $idAttr = if ($Id) { " id='$Id'" } else { '' }
+    return "<details$idAttr class='detail'$openAttr><summary>$(ConvertTo-HtmlSafe $Title)</summary><div class='detail-body'>$BodyHtml</div></details>"
 }
+
+function Get-RepositoryUrl {
+    param([string]$RootPath)
+    $envUrl = $env:PROFILEDOKTOR_REPO_URL
+    if (-not [string]::IsNullOrWhiteSpace($envUrl)) { return $envUrl }
+    $gitRoot = Join-Path -Path $RootPath -ChildPath '.git'
+    if (-not (Test-Path -LiteralPath $gitRoot)) { return '#' }
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) { return '#' }
+    try {
+        $remote = (& git -C $RootPath config --get remote.origin.url 2>$null)
+    } catch {
+        return '#'
+    }
+    if ([string]::IsNullOrWhiteSpace($remote)) { return '#' }
+    $remote = $remote.Trim()
+    if ($remote -match '^git@([^:]+):(.+)$') {
+        $remote = "https://$($Matches[1])/$($Matches[2])"
+    }
+    $remote = $remote -replace '\.git$', ''
+    return $remote
+}
+
+$repoUrl = Get-RepositoryUrl -RootPath $scriptRoot
 
 function Split-AccountName {
     param([string]$AccountName)
@@ -534,10 +559,10 @@ $profileEventIds = @(
     1500, 1501, 1502, 1504, 1505, 1508, 1509,
     1511, 1515, 1517, 1521, 1525, 1530, 1533,
     1542, 1546, 1550, 1552, 1554, 1561, 1564,
-    1565, 1570, 1571, 1581, 1583
+    1565, 1570, 1571, 1581, 1583, 1600
 )
 
-$failureEventIds = @(1500, 1502, 1504, 1505, 1508, 1509, 1511, 1515, 1517, 1521, 1530, 1542, 1546, 1550, 1552, 1554, 1564, 1565, 1570, 1581, 1583)
+$failureEventIds = @(1500, 1502, 1504, 1505, 1508, 1509, 1511, 1515, 1517, 1521, 1530, 1542, 1546, 1550, 1552, 1554, 1564, 1565, 1570, 1581, 1583, 1600)
 
 $lockCheckExtensions = @(
     '.pst', '.ost', '.db', '.edb', '.sqlite', '.dat', '.log', '.tmp', '.vhd', '.vhdx',
@@ -794,6 +819,7 @@ function New-ReportHtml {
         [string]$TemplatePath,
         [string]$CssHref,
         [string]$ReportTitle,
+        [string]$RepoUrl,
         [object]$RunSummary,
         [object]$ScanConfig,
         [object]$SystemDiskSummary,
@@ -805,35 +831,52 @@ function New-ReportHtml {
         throw "Template file not found: $TemplatePath"
     }
 
-    $navSb = New-Object System.Text.StringBuilder
-    [void]$navSb.AppendLine('<nav class="nav">')
-    [void]$navSb.AppendLine('<div class="nav-group">')
-    [void]$navSb.AppendLine('<div class="nav-title">Overview</div>')
-    [void]$navSb.AppendLine('<ul class="nav-list">')
-    [void]$navSb.AppendLine("<li><a href='#run-summary'>Run Summary</a></li>")
-    [void]$navSb.AppendLine("<li><a href='#scan-config'>Scan Configuration</a></li>")
-    if ($SystemDiskSummary) { [void]$navSb.AppendLine("<li><a href='#system-disk'>System Disk</a></li>") }
-    [void]$navSb.AppendLine("<li><a href='#profilelist-bak'>ProfileList .bak Keys</a></li>")
-    [void]$navSb.AppendLine("<li><a href='#orphaned-profiles'>Orphaned Profile Dirs</a></li>")
-    [void]$navSb.AppendLine('</ul></div>')
-
-    [void]$navSb.AppendLine('<div class="nav-group">')
-    [void]$navSb.AppendLine('<div class="nav-title">Profiles</div>')
-    [void]$navSb.AppendLine('<ul class="nav-list">')
+    $navProfilesSb = New-Object System.Text.StringBuilder
     if ($Profiles -and $Profiles.Count -gt 0) {
         foreach ($profile in $Profiles) {
             $profileId = ConvertTo-HtmlId -Text $profile.Sid -Prefix 'profile'
             $profileLabel = if ($profile.Account) { $profile.Account } else { $profile.Sid }
-            [void]$navSb.AppendLine("<li><a href='#$profileId'>$(ConvertTo-HtmlSafe $profileLabel)</a></li>")
+            $overviewId = "$profileId-overview"
+            $logonId = "$profileId-logon"
+            $registryId = "$profileId-registry"
+            $adId = "$profileId-ad"
+            $diskId = "$profileId-disk"
+            $findingsId = "$profileId-findings"
+            $inventoryId = "$profileId-inventory"
+            $largeId = "$profileId-large"
+            $lockedId = "$profileId-locked"
+            $longId = "$profileId-long"
+            $missingId = "$profileId-missing"
+            $errorsId = "$profileId-errors"
+            $syncId = "$profileId-sync"
+            $eventSummaryId = "$profileId-events-summary"
+            $eventRecentId = "$profileId-events-recent"
+
+            [void]$navProfilesSb.AppendLine('<li class="nav-item">')
+            [void]$navProfilesSb.AppendLine("<a href='#$profileId'>$(ConvertTo-HtmlSafe $profileLabel)</a>")
+            [void]$navProfilesSb.AppendLine('<ul class="nav-sub">')
+            [void]$navProfilesSb.AppendLine("<li><a href='#$overviewId'>Profile Overview</a></li>")
+            [void]$navProfilesSb.AppendLine("<li><a href='#$logonId'>Logon Context</a></li>")
+            [void]$navProfilesSb.AppendLine("<li><a href='#$registryId'>Registry State</a></li>")
+            if ($profile.AdProfile) { [void]$navProfilesSb.AppendLine("<li><a href='#$adId'>Active Directory</a></li>") }
+            if ($profile.DriveInfo) { [void]$navProfilesSb.AppendLine("<li><a href='#$diskId'>Profile Disk</a></li>") }
+            [void]$navProfilesSb.AppendLine("<li><a href='#$inventoryId'>File Inventory</a></li>")
+            [void]$navProfilesSb.AppendLine("<li><a href='#$largeId'>Large Files</a></li>")
+            [void]$navProfilesSb.AppendLine("<li><a href='#$lockedId'>Locked Files</a></li>")
+            [void]$navProfilesSb.AppendLine("<li><a href='#$longId'>Long Paths</a></li>")
+            [void]$navProfilesSb.AppendLine("<li><a href='#$missingId'>Missing Core Files</a></li>")
+            if ($profile.FileInventory -and $profile.FileInventory.Errors -and $profile.FileInventory.Errors.Count -gt 0) {
+                [void]$navProfilesSb.AppendLine("<li><a href='#$errorsId'>Inventory Errors</a></li>")
+            }
+            [void]$navProfilesSb.AppendLine("<li><a href='#$syncId'>Sync Timestamps</a></li>")
+            [void]$navProfilesSb.AppendLine("<li><a href='#$eventSummaryId'>Event Summary</a></li>")
+            [void]$navProfilesSb.AppendLine("<li><a href='#$eventRecentId'>Recent Events</a></li>")
+            [void]$navProfilesSb.AppendLine('</ul></li>')
         }
     } else {
-        [void]$navSb.AppendLine('<li class="muted">None detected</li>')
+        [void]$navProfilesSb.AppendLine('<li class="muted">None detected</li>')
     }
-    [void]$navSb.AppendLine('</ul></div>')
-    [void]$navSb.AppendLine('</nav>')
-    $navHtml = $navSb.ToString()
-
-    $contentSb = New-Object System.Text.StringBuilder
+    $navProfileItems = $navProfilesSb.ToString()
 
     $runRows = @()
     foreach ($key in $RunSummary.Keys) {
@@ -842,28 +885,20 @@ function New-ReportHtml {
         $runRows += [pscustomobject]@{ Name = $key; Value = $val }
     }
     $runBody = ConvertTo-HtmlTable -Rows $runRows -Columns @('Name', 'Value')
-    [void]$contentSb.AppendLine("<section id='run-summary' class='section'>")
-    [void]$contentSb.AppendLine((New-DetailsBlock -Title 'Run Summary' -BodyHtml $runBody -Open))
-    [void]$contentSb.AppendLine('</section>')
 
     $cfgRows = @()
     foreach ($key in $ScanConfig.Keys) {
         $cfgRows += [pscustomobject]@{ Name = $key; Value = $ScanConfig[$key] }
     }
     $cfgBody = ConvertTo-HtmlTable -Rows $cfgRows -Columns @('Name', 'Value')
-    [void]$contentSb.AppendLine("<section id='scan-config' class='section'>")
-    [void]$contentSb.AppendLine((New-DetailsBlock -Title 'Scan Configuration' -BodyHtml $cfgBody -Open))
-    [void]$contentSb.AppendLine('</section>')
 
+    $diskBody = "<p class='empty'>None</p>"
     if ($SystemDiskSummary) {
         $diskRows = @()
         foreach ($key in $SystemDiskSummary.Keys) {
             $diskRows += [pscustomobject]@{ Name = $key; Value = $SystemDiskSummary[$key] }
         }
         $diskBody = ConvertTo-HtmlTable -Rows $diskRows -Columns @('Name', 'Value')
-        [void]$contentSb.AppendLine("<section id='system-disk' class='section'>")
-        [void]$contentSb.AppendLine((New-DetailsBlock -Title 'System Disk' -BodyHtml $diskBody))
-        [void]$contentSb.AppendLine('</section>')
     }
 
     $bakBody = if ($ProfileRegBakKeys -and $ProfileRegBakKeys.Count -gt 0) {
@@ -872,9 +907,6 @@ function New-ReportHtml {
     } else {
         "<p class='empty'>None</p>"
     }
-    [void]$contentSb.AppendLine("<section id='profilelist-bak' class='section'>")
-    [void]$contentSb.AppendLine((New-DetailsBlock -Title 'ProfileList Registry .bak Keys' -BodyHtml $bakBody))
-    [void]$contentSb.AppendLine('</section>')
 
     $orphBody = if ($ProfileDirOrphans -and $ProfileDirOrphans.Count -gt 0) {
         $orphRows = $ProfileDirOrphans | ForEach-Object { [pscustomobject]@{ Path = $_.FullName } }
@@ -882,15 +914,28 @@ function New-ReportHtml {
     } else {
         "<p class='empty'>None</p>"
     }
-    [void]$contentSb.AppendLine("<section id='orphaned-profiles' class='section'>")
-    [void]$contentSb.AppendLine((New-DetailsBlock -Title 'Orphaned Profile Directories' -BodyHtml $orphBody))
-    [void]$contentSb.AppendLine('</section>')
 
+    $profileSectionsSb = New-Object System.Text.StringBuilder
     foreach ($profile in $Profiles) {
         $profileId = ConvertTo-HtmlId -Text $profile.Sid -Prefix 'profile'
         $profileLabel = if ($profile.Account) { $profile.Account } else { $profile.Sid }
-        [void]$contentSb.AppendLine("<section id='$profileId' class='section profile'>")
-        [void]$contentSb.AppendLine("<details class='detail detail-profile' open><summary>User Profile: $(ConvertTo-HtmlSafe $profileLabel)</summary><div class='detail-body'>")
+        $overviewId = "$profileId-overview"
+        $logonId = "$profileId-logon"
+        $registryId = "$profileId-registry"
+        $adId = "$profileId-ad"
+        $diskId = "$profileId-disk"
+        $findingsId = "$profileId-findings"
+        $inventoryId = "$profileId-inventory"
+        $largeId = "$profileId-large"
+        $lockedId = "$profileId-locked"
+        $longId = "$profileId-long"
+        $missingId = "$profileId-missing"
+        $errorsId = "$profileId-errors"
+        $syncId = "$profileId-sync"
+        $eventSummaryId = "$profileId-events-summary"
+        $eventRecentId = "$profileId-events-recent"
+        [void]$profileSectionsSb.AppendLine("<section id='$profileId' class='section profile'>")
+        [void]$profileSectionsSb.AppendLine("<details class='detail detail-profile' open><summary>User Profile: $(ConvertTo-HtmlSafe $profileLabel)</summary><div class='detail-body'>")
 
         $overview = [ordered]@{
             'Account' = $profile.Account
@@ -914,7 +959,20 @@ function New-ReportHtml {
             $overviewRows += [pscustomobject]@{ Name = $key; Value = $val }
         }
         $overviewBody = ConvertTo-HtmlTable -Rows $overviewRows -Columns @('Name', 'Value')
-        [void]$contentSb.AppendLine((New-DetailsBlock -Title 'Profile Overview' -BodyHtml $overviewBody -Open))
+        $findingsHtml = if ($profile.Findings -and $profile.Findings.Count -gt 0) {
+            $findSb = New-Object System.Text.StringBuilder
+            [void]$findSb.AppendLine('<ul>')
+            foreach ($finding in $profile.Findings) {
+                [void]$findSb.AppendLine("<li>$(ConvertTo-HtmlSafe $finding)</li>")
+            }
+            [void]$findSb.AppendLine('</ul>')
+            $findSb.ToString()
+        } else {
+            "<span class='empty'>No findings detected.</span>"
+        }
+        $findingsRow = "<tr id='$findingsId' class='finding-row'><td>Findings</td><td>$findingsHtml</td></tr>"
+        $overviewBody = $overviewBody -replace '</tbody></table>', "$findingsRow</tbody></table>"
+        [void]$profileSectionsSb.AppendLine((New-DetailsBlock -Title 'Profile Overview' -BodyHtml $overviewBody -Open -Id $overviewId))
 
         $logonBody = if ($profile.Logon) {
             $logonInfo = [ordered]@{
@@ -939,7 +997,7 @@ function New-ReportHtml {
         } else {
             "<p class='empty'>No matching logon events found in the selected window.</p>"
         }
-        [void]$contentSb.AppendLine((New-DetailsBlock -Title 'Logon Context (Security Log 4624)' -BodyHtml $logonBody -Open:($null -ne $profile.Logon)))
+        [void]$profileSectionsSb.AppendLine((New-DetailsBlock -Title 'Logon Context (Security Log 4624)' -BodyHtml $logonBody -Open:($null -ne $profile.Logon) -Id $logonId))
 
         $regInfo = $profile.Registry
         $regRows = @()
@@ -960,7 +1018,7 @@ function New-ReportHtml {
             $regRows += [pscustomobject]@{ Name = $key; Value = $val }
         }
         $regBody = ConvertTo-HtmlTable -Rows $regRows -Columns @('Name', 'Value')
-        [void]$contentSb.AppendLine((New-DetailsBlock -Title 'Registry State (ProfileList)' -BodyHtml $regBody))
+        [void]$profileSectionsSb.AppendLine((New-DetailsBlock -Title 'Registry State (ProfileList)' -BodyHtml $regBody -Id $registryId))
 
         if ($profile.AdProfile) {
             $adRows = @()
@@ -968,7 +1026,7 @@ function New-ReportHtml {
                 $adRows += [pscustomobject]@{ Name = $key; Value = $profile.AdProfile[$key] }
             }
             $adBody = ConvertTo-HtmlTable -Rows $adRows -Columns @('Name', 'Value')
-            [void]$contentSb.AppendLine((New-DetailsBlock -Title 'Active Directory Profile Path' -BodyHtml $adBody))
+            [void]$profileSectionsSb.AppendLine((New-DetailsBlock -Title 'Active Directory Profile Path' -BodyHtml $adBody -Id $adId))
         }
 
         if ($profile.DriveInfo) {
@@ -979,21 +1037,8 @@ function New-ReportHtml {
             $driveRows += [pscustomobject]@{ Name = 'Free'; Value = (Convert-BytesToHuman $profile.DriveInfo.FreeBytes) }
             $driveRows += [pscustomobject]@{ Name = 'FreePercent'; Value = if ($profile.DriveInfo.FreePercent -ne $null) { "$($profile.DriveInfo.FreePercent)%" } else { '' } }
             $driveBody = ConvertTo-HtmlTable -Rows $driveRows -Columns @('Name', 'Value')
-            [void]$contentSb.AppendLine((New-DetailsBlock -Title 'Profile Disk' -BodyHtml $driveBody))
+            [void]$profileSectionsSb.AppendLine((New-DetailsBlock -Title 'Profile Disk' -BodyHtml $driveBody -Id $diskId))
         }
-
-        $findingsBody = if ($profile.Findings -and $profile.Findings.Count -gt 0) {
-            $findSb = New-Object System.Text.StringBuilder
-            [void]$findSb.AppendLine('<ul>')
-            foreach ($finding in $profile.Findings) {
-                [void]$findSb.AppendLine("<li>$(ConvertTo-HtmlSafe $finding)</li>")
-            }
-            [void]$findSb.AppendLine('</ul>')
-            $findSb.ToString()
-        } else {
-            "<p class='empty'>No findings detected.</p>"
-        }
-        [void]$contentSb.AppendLine((New-DetailsBlock -Title 'Findings' -BodyHtml $findingsBody -Open))
 
         $fileSummaryRows = @(
             [pscustomobject]@{ Name = 'TotalFiles'; Value = $profile.FileInventory.TotalFiles },
@@ -1002,28 +1047,28 @@ function New-ReportHtml {
             [pscustomobject]@{ Name = 'RoamingBytes'; Value = Convert-BytesToHuman $profile.FileInventory.RoamingBytes }
         )
         $fileSummaryBody = ConvertTo-HtmlTable -Rows $fileSummaryRows -Columns @('Name', 'Value')
-        [void]$contentSb.AppendLine((New-DetailsBlock -Title 'File Inventory' -BodyHtml $fileSummaryBody))
+        [void]$profileSectionsSb.AppendLine((New-DetailsBlock -Title 'File Inventory' -BodyHtml $fileSummaryBody -Id $inventoryId))
 
         $largeBody = ConvertTo-HtmlTable -Rows $profile.FileInventory.LargeFiles -Columns @('Path', 'Size', 'LastWriteTime')
-        [void]$contentSb.AppendLine((New-DetailsBlock -Title 'Large Roaming Files' -BodyHtml $largeBody))
+        [void]$profileSectionsSb.AppendLine((New-DetailsBlock -Title 'Large Roaming Files' -BodyHtml $largeBody -Id $largeId))
 
         $lockedBody = ConvertTo-HtmlTable -Rows $profile.FileInventory.LockedFiles -Columns @('Path', 'Size', 'LastWriteTime', 'Reason')
-        [void]$contentSb.AppendLine((New-DetailsBlock -Title 'Locked File Candidates' -BodyHtml $lockedBody))
+        [void]$profileSectionsSb.AppendLine((New-DetailsBlock -Title 'Locked File Candidates' -BodyHtml $lockedBody -Id $lockedId))
 
         $longBody = ConvertTo-HtmlTable -Rows $profile.FileInventory.LongPaths -Columns @('Path', 'PathLength', 'SizeBytes')
-        [void]$contentSb.AppendLine((New-DetailsBlock -Title 'Long Paths' -BodyHtml $longBody))
+        [void]$profileSectionsSb.AppendLine((New-DetailsBlock -Title 'Long Paths' -BodyHtml $longBody -Id $longId))
 
         $missingRows = $null
         if ($profile.FileInventory.MissingFiles -and $profile.FileInventory.MissingFiles.Count -gt 0) {
             $missingRows = $profile.FileInventory.MissingFiles | ForEach-Object { [pscustomobject]@{ Path = $_ } }
         }
         $missingBody = ConvertTo-HtmlTable -Rows $missingRows -Columns @('Path') -EmptyMessage 'None'
-        [void]$contentSb.AppendLine((New-DetailsBlock -Title 'Missing Core Files' -BodyHtml $missingBody))
+        [void]$profileSectionsSb.AppendLine((New-DetailsBlock -Title 'Missing Core Files' -BodyHtml $missingBody -Id $missingId))
 
         if ($profile.FileInventory.Errors -and $profile.FileInventory.Errors.Count -gt 0) {
             $errRows = $profile.FileInventory.Errors | ForEach-Object { [pscustomobject]@{ Error = $_ } }
             $errBody = ConvertTo-HtmlTable -Rows $errRows -Columns @('Error')
-            [void]$contentSb.AppendLine((New-DetailsBlock -Title 'Inventory Errors' -BodyHtml $errBody))
+            [void]$profileSectionsSb.AppendLine((New-DetailsBlock -Title 'Inventory Errors' -BodyHtml $errBody -Id $errorsId))
         }
 
         $eventsInfo = $profile.Events
@@ -1039,26 +1084,33 @@ function New-ReportHtml {
             }
         }
         $syncBody = ConvertTo-HtmlTable -Rows $syncRows -Columns @('Name', 'Value') -EmptyMessage 'No sync events detected.'
-        [void]$contentSb.AppendLine((New-DetailsBlock -Title 'Roaming Sync Timestamps (Derived from Events)' -BodyHtml $syncBody))
+        [void]$profileSectionsSb.AppendLine((New-DetailsBlock -Title 'Roaming Sync Timestamps (Derived from Events)' -BodyHtml $syncBody -Id $syncId))
 
         $eventSummaryBody = ConvertTo-HtmlTable -Rows $eventsInfo.Summary -Columns @('Id', 'Count', 'LastSeen', 'Provider', 'Example') -EmptyMessage 'No profile events in window.'
-        [void]$contentSb.AppendLine((New-DetailsBlock -Title 'Event Summary' -BodyHtml $eventSummaryBody))
+        [void]$profileSectionsSb.AppendLine((New-DetailsBlock -Title 'Event Summary' -BodyHtml $eventSummaryBody -Id $eventSummaryId))
 
         $recentEvents = @()
         if ($eventsInfo.Items) {
             $recentEvents = $eventsInfo.Items | Select-Object -First 50
         }
         $recentBody = ConvertTo-EventsTable -Rows $recentEvents -EmptyMessage 'No profile events in window.'
-        [void]$contentSb.AppendLine((New-DetailsBlock -Title 'Recent Events' -BodyHtml $recentBody))
+        [void]$profileSectionsSb.AppendLine((New-DetailsBlock -Title 'Recent Events' -BodyHtml $recentBody -Id $eventRecentId))
 
-        [void]$contentSb.AppendLine('</div></details></section>')
+        [void]$profileSectionsSb.AppendLine('</div></details></section>')
     }
+    $profileSections = if ($profileSectionsSb.Length -gt 0) { $profileSectionsSb.ToString() } else { "<p class='empty'>No profiles detected.</p>" }
 
     $template = Get-Content -LiteralPath $TemplatePath -Raw
     $html = $template.Replace('{{REPORT_TITLE}}', (ConvertTo-HtmlSafe $ReportTitle))
+    $html = $html.Replace('{{REPO_URL}}', (ConvertTo-HtmlSafe $RepoUrl))
     $html = $html.Replace('{{CSS_HREF}}', $CssHref)
-    $html = $html.Replace('{{NAV}}', $navHtml)
-    $html = $html.Replace('{{CONTENT}}', $contentSb.ToString())
+    $html = $html.Replace('{{NAV_PROFILE_ITEMS}}', $navProfileItems)
+    $html = $html.Replace('{{RUN_SUMMARY_TABLE}}', $runBody)
+    $html = $html.Replace('{{SCAN_CONFIG_TABLE}}', $cfgBody)
+    $html = $html.Replace('{{SYSTEM_DISK_TABLE}}', $diskBody)
+    $html = $html.Replace('{{PROFILELIST_BAK_TABLE}}', $bakBody)
+    $html = $html.Replace('{{ORPHANED_PROFILES_TABLE}}', $orphBody)
+    $html = $html.Replace('{{PROFILE_SECTIONS}}', $profileSections)
     $html = $html.Replace('{{GENERATED_AT}}', (ConvertTo-HtmlSafe (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')))
     return $html
 }
@@ -1102,7 +1154,7 @@ if (-not (Test-Path -LiteralPath $cssTargetPath)) {
     }
 }
 
-$html = New-ReportHtml -TemplatePath $templatePath -CssHref $cssHref -ReportTitle $reportTitle -RunSummary $runSummary -ScanConfig $scanConfig -SystemDiskSummary $systemDiskSummary -ProfileRegBakKeys $profileRegBakKeys -ProfileDirOrphans $profileDirOrphans -Profiles $reportProfiles
+$html = New-ReportHtml -TemplatePath $templatePath -CssHref $cssHref -ReportTitle $reportTitle -RepoUrl $repoUrl -RunSummary $runSummary -ScanConfig $scanConfig -SystemDiskSummary $systemDiskSummary -ProfileRegBakKeys $profileRegBakKeys -ProfileDirOrphans $profileDirOrphans -Profiles $reportProfiles
 $html | Out-File -LiteralPath $OutputPath -Encoding UTF8
 Write-Host "HTML report written to: $OutputPath"
 
