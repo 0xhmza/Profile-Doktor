@@ -7,31 +7,6 @@
   </p>
 </div>
 
-<style>
-.badge {
-  display: inline-block;
-  padding: 3px 9px;
-  margin: 2px;
-  border-radius: 999px;
-  border: 1px solid #d8d8d8;
-  background: #f3f3f3;
-  font-size: 12px;
-}
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 12px;
-}
-.card {
-  border: 1px solid #e1e1e1;
-  border-radius: 10px;
-  padding: 10px 12px;
-  background: #ffffff;
-}
-</style>
-
----
-
 ## What It Does
 ProfileDoktor audits local accounts for roaming-related problems. It automates tasks that take system administrators a long time to do manually.
 
