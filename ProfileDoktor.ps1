@@ -43,6 +43,77 @@ $cssSourcePath = Join-Path -Path $scriptRoot -ChildPath $cssFileName
 $scriptVersion = '1.0.0'
 $scanStart = Get-Date
 
+$progressPalette = @{
+    Accent = 'Magenta'
+    Primary = 'Cyan'
+    Info = 'DarkCyan'
+    Success = 'Green'
+    Warn = 'Yellow'
+    Error = 'Red'
+    Dim = 'DarkGray'
+}
+
+function Write-PDStatus {
+    param(
+        [string]$Message,
+        [string]$Tone = 'Primary',
+        [string]$Prefix = '[PD]'
+    )
+    $prefixColor = if ($progressPalette.ContainsKey('Accent')) { $progressPalette['Accent'] } else { 'Cyan' }
+    $messageColor = if ($progressPalette.ContainsKey($Tone)) { $progressPalette[$Tone] } else { 'White' }
+    Write-Host $Prefix -NoNewline -ForegroundColor $prefixColor
+    Write-Host " $Message" -ForegroundColor $messageColor
+}
+
+function Update-PDProgress {
+    param(
+        [int]$Id,
+        [string]$Activity,
+        [string]$Status,
+        [int]$PercentComplete,
+        [int]$ParentId = -1
+    )
+    $params = @{
+        Id = $Id
+        Activity = $Activity
+        Status = $Status
+        PercentComplete = $PercentComplete
+    }
+    if ($ParentId -ge 0) { $params.ParentId = $ParentId }
+    Write-Progress @params
+}
+
+function Complete-PDProgress {
+    param(
+        [int]$Id,
+        [string]$Activity,
+        [int]$ParentId = -1
+    )
+    $params = @{
+        Id = $Id
+        Activity = $Activity
+        Completed = $true
+    }
+    if ($ParentId -ge 0) { $params.ParentId = $ParentId }
+    Write-Progress @params
+}
+
+function Write-PDProfileStep {
+    param(
+        [int]$Step,
+        [int]$Total,
+        [string]$Activity,
+        [string]$Message,
+        [int]$ProgressId,
+        [int]$ParentId
+    )
+    $percent = if ($Total -gt 0) { [math]::Round(($Step / $Total) * 100, 0) } else { 0 }
+    Update-PDProgress -Id $ProgressId -ParentId $ParentId -Activity $Activity -Status $Message -PercentComplete $percent
+    Write-PDStatus -Message $Message -Tone 'Info' -Prefix '  ->'
+}
+
+Write-PDStatus -Message 'Starting ProfileDoktor report generation.' -Tone 'Primary' -Prefix '[PD]'
+
 function Convert-BytesToHuman {
     param([long]$Bytes)
     if ($null -eq $Bytes) { return '' }
@@ -569,10 +640,12 @@ $lockCheckExtensions = @(
     '.zip', '.7z', '.rar', '.bak'
 )
 
+Write-PDStatus -Message 'Collecting system context.' -Tone 'Info' -Prefix '[..]'
 $os = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction SilentlyContinue
 $cs = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction SilentlyContinue
 $systemDriveInfo = Get-DriveInfo -Path $env:SystemDrive
 
+Write-PDStatus -Message 'Loading profile registry state.' -Tone 'Info' -Prefix '[..]'
 $profileRegRoot = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList'
 $profileRegBakKeys = @()
 try {
@@ -580,6 +653,7 @@ try {
 } catch {
 }
 
+Write-PDStatus -Message 'Enumerating local user profiles.' -Tone 'Info' -Prefix '[..]'
 $profiles = Get-CimInstance -ClassName Win32_UserProfile -ErrorAction SilentlyContinue |
     Where-Object { $_.LocalPath -and -not $_.Special } |
     Sort-Object LocalPath
@@ -591,6 +665,7 @@ if ($UserName) {
     }
 }
 
+Write-PDStatus -Message 'Checking for Active Directory module.' -Tone 'Dim' -Prefix '[AD]'
 $adAvailable = $false
 if (Get-Command Get-ADUser -ErrorAction SilentlyContinue) {
     $adAvailable = $true
@@ -602,11 +677,40 @@ if (Get-Command Get-ADUser -ErrorAction SilentlyContinue) {
     }
 }
 
+$profilesCount = if ($profiles) { $profiles.Count } else { 0 }
+Write-PDStatus -Message ("Found {0} profile(s) to scan." -f $profilesCount) -Tone 'Primary' -Prefix '[*]'
+if ($adAvailable) {
+    Write-PDStatus -Message 'Active Directory enrichment enabled.' -Tone 'Dim' -Prefix '[AD]'
+} else {
+    Write-PDStatus -Message 'Active Directory module not available; skipping AD lookup.' -Tone 'Dim' -Prefix '[AD]'
+}
+
+$overallActivity = 'ProfileDoktor Report'
+$overallProgressId = 1
+$profileProgressId = 2
+if ($profilesCount -gt 0) {
+    Update-PDProgress -Id $overallProgressId -Activity $overallActivity -Status 'Starting scan' -PercentComplete 0
+}
+
 $reportProfiles = @()
+$profileIndex = 0
 foreach ($profile in $profiles) {
     $sid = $profile.SID
     $account = Convert-SidToAccount -Sid $sid
     if (-not $account) { $account = $sid }
+
+    $profileIndex++
+    $profileLabel = $account
+    $overallPercent = if ($profilesCount -gt 0) { [math]::Round(($profileIndex / $profilesCount) * 100, 0) } else { 100 }
+    Update-PDProgress -Id $overallProgressId -Activity $overallActivity -Status ("Profile {0}/{1}: {2}" -f $profileIndex, $profilesCount, $profileLabel) -PercentComplete $overallPercent
+    Write-PDStatus -Message ("Profile {0}/{1}: {2}" -f $profileIndex, $profilesCount, $profileLabel) -Tone 'Primary' -Prefix '[>]'
+
+    $profileActivity = "Profile: $profileLabel"
+    $profileStep = 0
+    $profileStepsTotal = 6
+
+    $profileStep++
+    Write-PDProfileStep -Step $profileStep -Total $profileStepsTotal -Activity $profileActivity -Message 'Reading registry + profile paths' -ProgressId $profileProgressId -ParentId $overallProgressId
 
     $regPath = Join-Path $profileRegRoot $sid
     $regProps = Get-ItemProperty -Path $regPath -ErrorAction SilentlyContinue
@@ -654,9 +758,13 @@ foreach ($profile in $profiles) {
         (Join-Path $localPath 'AppData\Local\Microsoft\Windows\INetCache\*')
     )
 
+    $profileStep++
+    Write-PDProfileStep -Step $profileStep -Total $profileStepsTotal -Activity $profileActivity -Message 'Inventorying files' -ProgressId $profileProgressId -ParentId $overallProgressId
     $fileInventory = Get-ProfileFileInventory -ProfilePath $localPath -LargeFileBytes ($LargeFileMB * 1MB) -TopFileCount $TopFileCount -ExcludeLikePatterns $excludePatterns -LockCheckExtensions $lockCheckExtensions
     $lastUseTime = Convert-WmiTime -WmiTime $profile.LastUseTime
 
+    $profileStep++
+    Write-PDProfileStep -Step $profileStep -Total $profileStepsTotal -Activity $profileActivity -Message 'Collecting profile events' -ProgressId $profileProgressId -ParentId $overallProgressId
     $userEvents = Get-UserEvents -AccountName $account -Sid $sid -DaysBack $DaysBack -MaxEvents $MaxEvents -ProfileEventIds $profileEventIds
     $eventSummary = @()
     if ($userEvents) {
@@ -681,25 +789,39 @@ foreach ($profile in $profiles) {
         $lastSyncFailure = $userEvents | Where-Object { $failureEventIds -contains $_.Id } | Sort-Object TimeCreated -Descending | Select-Object -First 1
     }
 
+    $profileStep++
+    Write-PDProfileStep -Step $profileStep -Total $profileStepsTotal -Activity $profileActivity -Message 'Reading security logon context' -ProgressId $profileProgressId -ParentId $overallProgressId
     $lastLogon = Get-LastLogonEvent -AccountName $account -Sid $sid -DaysBack $DaysBack -MaxEvents $MaxEvents
 
     $adInfo = $null
+    $acctParts = $null
+    $shouldQueryAd = $false
     if ($adAvailable) {
         $acctParts = Split-AccountName -AccountName $account
         if ($acctParts.Domain -and ($acctParts.Domain -ne $env:COMPUTERNAME) -and $acctParts.User) {
-            try {
-                $adUser = Get-ADUser -Identity $acctParts.User -Properties ProfilePath, HomeDirectory, HomeDrive, ScriptPath -ErrorAction Stop
-                $adInfo = [ordered]@{
-                    ProfilePath = $adUser.ProfilePath
-                    HomeDirectory = $adUser.HomeDirectory
-                    HomeDrive = $adUser.HomeDrive
-                    ScriptPath = $adUser.ScriptPath
-                }
-            } catch {
-            }
+            $shouldQueryAd = $true
         }
     }
 
+    $profileStep++
+    $adMessage = if ($shouldQueryAd) { 'Active Directory profile lookup' } else { 'Active Directory lookup skipped' }
+    Write-PDProfileStep -Step $profileStep -Total $profileStepsTotal -Activity $profileActivity -Message $adMessage -ProgressId $profileProgressId -ParentId $overallProgressId
+
+    if ($shouldQueryAd) {
+        try {
+            $adUser = Get-ADUser -Identity $acctParts.User -Properties ProfilePath, HomeDirectory, HomeDrive, ScriptPath -ErrorAction Stop
+            $adInfo = [ordered]@{
+                ProfilePath = $adUser.ProfilePath
+                HomeDirectory = $adUser.HomeDirectory
+                HomeDrive = $adUser.HomeDrive
+                ScriptPath = $adUser.ScriptPath
+            }
+        } catch {
+        }
+    }
+
+    $profileStep++
+    Write-PDProfileStep -Step $profileStep -Total $profileStepsTotal -Activity $profileActivity -Message 'Checking disk and findings' -ProgressId $profileProgressId -ParentId $overallProgressId
     $driveInfo = Get-DriveInfo -Path $localPath
 
     $findings = New-Object System.Collections.Generic.List[string]
@@ -766,6 +888,8 @@ foreach ($profile in $profiles) {
         Logon = $lastLogon
         Findings = $findings
     }
+
+    Complete-PDProgress -Id $profileProgressId -Activity $profileActivity -ParentId $overallProgressId
 }
 
 $scanEnd = Get-Date
@@ -1154,9 +1278,13 @@ if (-not (Test-Path -LiteralPath $cssTargetPath)) {
     }
 }
 
+Write-PDStatus -Message 'Compiling report HTML.' -Tone 'Info' -Prefix '[..]'
+Update-PDProgress -Id $overallProgressId -Activity $overallActivity -Status 'Compiling report HTML' -PercentComplete 100
 $html = New-ReportHtml -TemplatePath $templatePath -CssHref $cssHref -ReportTitle $reportTitle -RepoUrl $repoUrl -RunSummary $runSummary -ScanConfig $scanConfig -SystemDiskSummary $systemDiskSummary -ProfileRegBakKeys $profileRegBakKeys -ProfileDirOrphans $profileDirOrphans -Profiles $reportProfiles
 $html | Out-File -LiteralPath $OutputPath -Encoding UTF8
+Complete-PDProgress -Id $overallProgressId -Activity $overallActivity
 Write-Host "HTML report written to: $OutputPath"
+Write-PDStatus -Message 'Report generation complete.' -Tone 'Success' -Prefix '[OK]'
 
 if (-not $NoPrompt) {
     $response = Read-Host 'Open report in default browser? (Y/N)'

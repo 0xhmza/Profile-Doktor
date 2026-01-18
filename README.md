@@ -1,9 +1,8 @@
 <div align="center">
   <h1>ProfileDoktor</h1>
-  <p><b>Roaming profile forensics + health audit for Windows endpoints and servers.</b></p>
+  <p><b>Windows roaming profile auditor</b></p>
   <p>
     <span class="badge">PowerShell 5.1+</span>
-    <span class="badge">Admin Required</span>
     <span class="badge">Windows 10/11 + Server 2016+</span>
   </p>
 </div>
@@ -34,18 +33,11 @@
 ---
 
 ## What It Does
-ProfileDoktor scans local Windows profiles and correlates registry state, event logs, roaming paths, disk health, and file inventory. The output is a technical HTML report with collapsible sections and a left-side navigation tree for fast triage.
-
-<div class="grid">
-  <div class="card"><b>Profile Registry</b><br>ProfileList state, flags, refcount, load/unload time, .bak keys.</div>
-  <div class="card"><b>Event Correlation</b><br>User Profile Service + System/Application events plus Security 4624 logon context.</div>
-  <div class="card"><b>Roaming Risk</b><br>Locked files, oversized files, long paths, missing core hives.</div>
-  <div class="card"><b>Disk & Paths</b><br>Free space checks, orphaned profile dirs, roaming path access.</div>
-</div>
+ProfileDoktor audits local accounts for roaming-related problems. It automates tasks that take system administrators a long time to do manually.
 
 ## Quick Start
 ```powershell
-# From repo root, run as Admin
+# In an admin PowerShell session:
 .\ProfileDoktor.ps1 -AllUsers
 ```
 
@@ -60,9 +52,7 @@ ProfileDoktor scans local Windows profiles and correlates registry state, event 
 ```
 
 ## Output
-- HTML report with collapsible sections and left navigation.
-- Uses `ProfileDoktor.Report.template.html` and `ProfileDoktor.Report.css` from the same folder as the script.
-- If the report is written to another folder, the CSS is copied next to the HTML for offline viewing.
+- A comprehensive HTML report containing all collected data. The report is saved in the same folder as the script if no `-OutputPath` is specified.
 
 ## Parameters
 | Parameter | Purpose | Default |
@@ -91,24 +81,7 @@ ProfileDoktor scans local Windows profiles and correlates registry state, event 
   1581, 1583, 1600
 </details>
 
-## File Layout
-| File | Purpose |
-| --- | --- |
-| `ProfileDoktor.ps1` | Scanner and HTML generator. |
-| `ProfileDoktor.Report.template.html` | HTML shell with placeholders. |
-| `ProfileDoktor.Report.css` | Offline CSS for the report. |
-
-## Automation (Task Scheduler)
-```powershell
-$action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-NoProfile -ExecutionPolicy Bypass -File "C:\\Tools\\ProfileDoktor.ps1" -AllUsers -OutputPath "C:\\Reports\\ProfileDoktor_Daily.html" -NoPrompt'
-$trigger = New-ScheduledTaskTrigger -Daily -At 2am
-Register-ScheduledTask -TaskName 'ProfileDoktor_Audit' -Action $action -Trigger $trigger
-```
-
 ## Notes
 - Security log access is required to surface logon server and 4624 data.
 - The ActiveDirectory module is optional; if available, ProfilePath/HomeDirectory are added.
 - Long path checks are based on classic Windows MAX_PATH behavior (>= 260 chars).
-
-## License
-MIT
