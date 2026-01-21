@@ -3,7 +3,7 @@
   <p><b>Windows roaming profile auditor</b></p>
   <p>
     <span class="badge">PowerShell 5.1+</span>
-    <span class="badge">Windows 10/11 + Server 2016+</span>
+    <span class="badge"> | Windows 10/11, Server 2016+</span>
   </p>
 </div>
 
