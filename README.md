@@ -7,6 +7,9 @@
   </p>
 </div>
 
+
+![Screenshot](Screenshot.png)
+
 ## What It Does
 ProfileDoktor audits local accounts for roaming-related problems. It automates tasks that take system administrators a long time to do manually.
 
