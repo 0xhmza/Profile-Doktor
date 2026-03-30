@@ -11,5 +11,9 @@ $RECYCLE.BIN/
 *.bak
 *.swp
 
+# Screenshots
+Screenshot.png
+screenshot.jpg
+
 # Generated reports
 ProfileDoktor_Report_*.html

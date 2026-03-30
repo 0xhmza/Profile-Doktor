@@ -19,7 +19,9 @@ param(
 
     [int]$MaxEvents = 2000,
 
-    [switch]$NoPrompt
+    [switch]$NoPrompt,
+
+    [switch]$InlineCSS
 )
 
 if (-not $UserName -and -not $AllUsers) {
@@ -40,7 +42,7 @@ $cssFileName = 'ProfileDoktor.Report.css'
 $templatePath = Join-Path -Path $scriptRoot -ChildPath $templateFileName
 $cssSourcePath = Join-Path -Path $scriptRoot -ChildPath $cssFileName
 
-$scriptVersion = '1.0.0'
+$scriptVersion = '1.1.0'
 $scanStart = Get-Date
 
 $progressPalette = @{
@@ -635,6 +637,42 @@ $profileEventIds = @(
 
 $failureEventIds = @(1500, 1502, 1504, 1505, 1508, 1509, 1511, 1515, 1517, 1521, 1530, 1542, 1546, 1550, 1552, 1554, 1564, 1565, 1570, 1581, 1583, 1600)
 
+function Get-FindingSeverity {
+    param([string]$Finding)
+    if ($Finding -match 'missing|not accessible|not found|failure|failed|error') { return 'error' }
+    if ($Finding -match 'large|locked|long path|non-zero|exceeds|Low free') { return 'warn' }
+    return 'info'
+}
+
+function Get-ProfileHealthScore {
+    param([object]$Profile)
+    $score = 100
+    foreach ($finding in $Profile.Findings) {
+        $sev = Get-FindingSeverity -Finding $finding
+        switch ($sev) {
+            'error' { $score -= 20 }
+            'warn'  { $score -= 10 }
+            'info'  { $score -= 5 }
+        }
+    }
+    if ($score -lt 0) { $score = 0 }
+    return $score
+}
+
+function Get-HealthClass {
+    param([int]$Score)
+    if ($Score -ge 80) { return 'health-good' }
+    if ($Score -ge 50) { return 'health-fair' }
+    return 'health-poor'
+}
+
+function Get-HealthLabel {
+    param([int]$Score)
+    if ($Score -ge 80) { return 'Healthy' }
+    if ($Score -ge 50) { return 'Fair' }
+    return 'Issues Found'
+}
+
 $lockCheckExtensions = @(
     '.pst', '.ost', '.db', '.edb', '.sqlite', '.dat', '.log', '.tmp', '.vhd', '.vhdx',
     '.zip', '.7z', '.rar', '.bak'
@@ -977,7 +1015,10 @@ function New-ReportHtml {
             $eventRecentId = "$profileId-events-recent"
 
             [void]$navProfilesSb.AppendLine('<li class="nav-item">')
-            [void]$navProfilesSb.AppendLine("<a href='#$profileId'>$(ConvertTo-HtmlSafe $profileLabel)</a>")
+            $navScore = Get-ProfileHealthScore -Profile $profile
+            $navHealthClass = Get-HealthClass -Score $navScore
+            $navDot = "<span style='color:var(--$(if($navHealthClass -eq 'health-good'){'health-good'}elseif($navHealthClass -eq 'health-fair'){'health-fair'}else{'health-poor'}))'>&#x25CF;</span>"
+            [void]$navProfilesSb.AppendLine("<a href='#$profileId'>$navDot $(ConvertTo-HtmlSafe $profileLabel)</a>")
             [void]$navProfilesSb.AppendLine('<ul class="nav-sub">')
             [void]$navProfilesSb.AppendLine("<li><a href='#$overviewId'>Profile Overview</a></li>")
             [void]$navProfilesSb.AppendLine("<li><a href='#$logonId'>Logon Context</a></li>")
@@ -1059,7 +1100,11 @@ function New-ReportHtml {
         $eventSummaryId = "$profileId-events-summary"
         $eventRecentId = "$profileId-events-recent"
         [void]$profileSectionsSb.AppendLine("<section id='$profileId' class='section profile'>")
-        [void]$profileSectionsSb.AppendLine("<details class='detail detail-profile' open><summary>User Profile: $(ConvertTo-HtmlSafe $profileLabel)</summary><div class='detail-body'>")
+        $healthScore = Get-ProfileHealthScore -Profile $profile
+        $healthClass = Get-HealthClass -Score $healthScore
+        $healthLabel = Get-HealthLabel -Score $healthScore
+        $healthBadge = "<span class='health-badge $healthClass'>$healthLabel &mdash; $healthScore%</span>"
+        [void]$profileSectionsSb.AppendLine("<details class='detail detail-profile' open><summary>User Profile: $(ConvertTo-HtmlSafe $profileLabel) $healthBadge</summary><div class='detail-body'>")
 
         $overview = [ordered]@{
             'Account' = $profile.Account
@@ -1087,7 +1132,9 @@ function New-ReportHtml {
             $findSb = New-Object System.Text.StringBuilder
             [void]$findSb.AppendLine('<ul>')
             foreach ($finding in $profile.Findings) {
-                [void]$findSb.AppendLine("<li>$(ConvertTo-HtmlSafe $finding)</li>")
+                $sev = Get-FindingSeverity -Finding $finding
+                $sevBadge = "<span class='severity-badge severity-$sev'>$sev</span>"
+                [void]$findSb.AppendLine("<li>$sevBadge $(ConvertTo-HtmlSafe $finding)</li>")
             }
             [void]$findSb.AppendLine('</ul>')
             $findSb.ToString()
@@ -1236,6 +1283,8 @@ function New-ReportHtml {
     $html = $html.Replace('{{ORPHANED_PROFILES_TABLE}}', $orphBody)
     $html = $html.Replace('{{PROFILE_SECTIONS}}', $profileSections)
     $html = $html.Replace('{{GENERATED_AT}}', (ConvertTo-HtmlSafe (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')))
+    $html = $html.Replace('{{SCRIPT_VERSION}}', (ConvertTo-HtmlSafe $scriptVersion))
+    $html = $html.Replace('{{HOSTNAME}}', (ConvertTo-HtmlSafe $env:COMPUTERNAME))
     return $html
 }
 if (-not (Test-Path -LiteralPath $templatePath)) {
@@ -1281,6 +1330,14 @@ if (-not (Test-Path -LiteralPath $cssTargetPath)) {
 Write-PDStatus -Message 'Compiling report HTML.' -Tone 'Info' -Prefix '[..]'
 Update-PDProgress -Id $overallProgressId -Activity $overallActivity -Status 'Compiling report HTML' -PercentComplete 100
 $html = New-ReportHtml -TemplatePath $templatePath -CssHref $cssHref -ReportTitle $reportTitle -RepoUrl $repoUrl -RunSummary $runSummary -ScanConfig $scanConfig -SystemDiskSummary $systemDiskSummary -ProfileRegBakKeys $profileRegBakKeys -ProfileDirOrphans $profileDirOrphans -Profiles $reportProfiles
+
+if ($InlineCSS) {
+    Write-PDStatus -Message 'Inlining CSS for self-contained report.' -Tone 'Info' -Prefix '[..]'
+    $cssContent = Get-Content -LiteralPath $cssSourcePath -Raw
+    $styleTag = "<style>`n$cssContent`n</style>"
+    $html = $html -replace '<link\s+rel="stylesheet"\s+href="[^"]*"\s*/?>', $styleTag
+}
+
 $html | Out-File -LiteralPath $OutputPath -Encoding UTF8
 Complete-PDProgress -Id $overallProgressId -Activity $overallActivity
 Write-Host "HTML report written to: $OutputPath"

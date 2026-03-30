@@ -7,12 +7,22 @@
   <link rel="stylesheet" href="{{CSS_HREF}}">
 </head>
 <body>
+  <div class="scroll-progress" id="scrollProgress"></div>
+
   <div class="layout">
     <aside class="sidebar">
-      <div class="brand"><a class="brand-link" href="{{REPO_URL}}" target="_blank" rel="noopener">{{REPORT_TITLE}}</a></div>
+      <div class="brand">
+        <span class="brand-icon">&#x1FA7A;</span>
+        <a class="brand-link" href="{{REPO_URL}}" target="_blank" rel="noopener">ProfileDoktor</a>
+      </div>
       <div class="author">Author: <a href="https://github.com/0xhmza" target="_blank" rel="noopener">0xhmza</a></div>
       <div class="meta">Generated {{GENERATED_AT}}</div>
-      <nav class="nav">
+      <div class="sidebar-search">
+        <div class="sidebar-search-wrap">
+          <input type="text" id="navFilter" placeholder="Filter navigation..." autocomplete="off" spellcheck="false">
+        </div>
+      </div>
+      <nav class="nav" id="sidebarNav">
         <div class="nav-group">
           <div class="nav-title">Overview</div>
           <ul class="nav-list">
@@ -32,7 +42,19 @@
         </div>
       </nav>
     </aside>
+
     <main class="content">
+      <div class="toolbar" id="toolbar">
+        <button class="toolbar-btn" onclick="toggleAll(true)" title="Expand all sections">&#x25BC; Expand All</button>
+        <button class="toolbar-btn" onclick="toggleAll(false)" title="Collapse all sections">&#x25B6; Collapse All</button>
+        <div class="toolbar-sep"></div>
+        <div class="toolbar-search">
+          <input type="text" id="tableSearch" placeholder="Search tables... (Ctrl+K)" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="toolbar-sep"></div>
+        <span class="toolbar-label"><span class="kbd">Ctrl+K</span> Search &nbsp; <span class="kbd">Ctrl+E</span> Expand &nbsp; <span class="kbd">Ctrl+W</span> Collapse</span>
+      </div>
+
       <section id="run-summary" class="section">
         <details class="detail" open>
           <summary>Run Summary</summary>
@@ -81,7 +103,124 @@
       <section id="profiles" class="section">
         {{PROFILE_SECTIONS}}
       </section>
+
+      <footer class="report-footer">
+        <span>{{REPORT_TITLE}} &mdash; v{{SCRIPT_VERSION}}</span>
+        <span>Generated {{GENERATED_AT}} on {{HOSTNAME}}</span>
+        <a href="{{REPO_URL}}" target="_blank" rel="noopener">GitHub</a>
+      </footer>
     </main>
   </div>
+
+  <button class="back-to-top" id="backToTop" onclick="window.scrollTo({top:0})" title="Back to top" aria-label="Back to top">&#x2191;</button>
+
+  <script>
+  (function(){
+    /* ── Scroll progress bar ── */
+    var prog = document.getElementById('scrollProgress');
+    function updateProgress(){
+      var h = document.documentElement.scrollHeight - window.innerHeight;
+      prog.style.width = h > 0 ? ((window.scrollY / h) * 100) + '%' : '0%';
+    }
+
+    /* ── Back to top button ── */
+    var btt = document.getElementById('backToTop');
+    function updateBtt(){
+      btt.classList.toggle('visible', window.scrollY > 400);
+    }
+
+    window.addEventListener('scroll', function(){ updateProgress(); updateBtt(); }, {passive:true});
+    updateProgress();
+
+    /* ── Expand / Collapse all ── */
+    window.toggleAll = function(open){
+      document.querySelectorAll('details.detail').forEach(function(d){ d.open = open; });
+    };
+
+    /* ── Table search ── */
+    var searchInput = document.getElementById('tableSearch');
+    var debounceTimer;
+    searchInput.addEventListener('input', function(){
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(function(){ filterTables(searchInput.value); }, 200);
+    });
+
+    function filterTables(query){
+      var q = query.trim().toLowerCase();
+      document.querySelectorAll('table tbody tr').forEach(function(row){
+        if (!q) {
+          row.classList.remove('filter-hidden');
+          return;
+        }
+        var text = row.textContent.toLowerCase();
+        row.classList.toggle('filter-hidden', text.indexOf(q) === -1);
+      });
+    }
+
+    /* ── Sidebar nav filter ── */
+    var navFilter = document.getElementById('navFilter');
+    navFilter.addEventListener('input', function(){
+      var q = this.value.trim().toLowerCase();
+      document.querySelectorAll('#sidebarNav .nav-list li').forEach(function(li){
+        var text = li.textContent.toLowerCase();
+        li.style.display = (!q || text.indexOf(q) !== -1) ? '' : 'none';
+      });
+    });
+
+    /* ── Active nav tracking ── */
+    var navLinks = document.querySelectorAll('#sidebarNav a[href^="#"]');
+    var sections = [];
+    navLinks.forEach(function(a){
+      var target = document.querySelector(a.getAttribute('href'));
+      if(target) sections.push({el:target, link:a});
+    });
+
+    var activeLink = null;
+    function updateActiveNav(){
+      var scrollY = window.scrollY + 80;
+      var current = null;
+      for(var i = sections.length - 1; i >= 0; i--){
+        if(sections[i].el.offsetTop <= scrollY){ current = sections[i]; break; }
+      }
+      if(activeLink) activeLink.classList.remove('active');
+      if(current){ current.link.classList.add('active'); activeLink = current.link; }
+    }
+
+    window.addEventListener('scroll', updateActiveNav, {passive:true});
+    updateActiveNav();
+
+    /* ── Column sorting ── */
+    document.querySelectorAll('table thead th').forEach(function(th, colIdx){
+      var table = th.closest('table');
+      if (!table) return;
+      th.classList.add('sortable');
+      th.addEventListener('click', function(){
+        var tbody = table.querySelector('tbody');
+        if(!tbody) return;
+        var rows = Array.from(tbody.querySelectorAll('tr:not(.finding-row)'));
+        var asc = !th.classList.contains('sort-asc');
+        table.querySelectorAll('th').forEach(function(h){ h.classList.remove('sort-asc','sort-desc'); });
+        th.classList.add(asc ? 'sort-asc' : 'sort-desc');
+
+        rows.sort(function(a,b){
+          var at = (a.children[colIdx]||{}).textContent||'';
+          var bt = (b.children[colIdx]||{}).textContent||'';
+          var an = parseFloat(at.replace(/[^0-9.\-]/g,''));
+          var bn = parseFloat(bt.replace(/[^0-9.\-]/g,''));
+          if(!isNaN(an) && !isNaN(bn)) return asc ? an - bn : bn - an;
+          return asc ? at.localeCompare(bt) : bt.localeCompare(at);
+        });
+        rows.forEach(function(r){ tbody.appendChild(r); });
+      });
+    });
+
+    /* ── Keyboard shortcuts ── */
+    document.addEventListener('keydown', function(e){
+      if(e.ctrlKey && e.key === 'k'){ e.preventDefault(); searchInput.focus(); searchInput.select(); }
+      if(e.ctrlKey && e.key === 'e'){ e.preventDefault(); toggleAll(true); }
+      if(e.ctrlKey && e.key === 'w'){ e.preventDefault(); toggleAll(false); }
+    });
+  })();
+  </script>
 </body>
 </html>
